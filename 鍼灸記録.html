@@ -39,6 +39,14 @@
     border: 1px solid var(--line); background: var(--card); color: var(--text);
   }
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .chips:empty { display: none; }
+  .chip {
+    padding: 3px 10px; font-size: .8rem; border-radius: 999px;
+    background: var(--accent-soft); border-color: transparent; color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+  .chip.on { background: var(--accent); color: #fff; }
   .actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
   .yearbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
   .yearbar select { width: auto; }
@@ -54,7 +62,7 @@
   th, td { padding: 8px 6px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
   th { font-size: .75rem; color: var(--muted); font-weight: 600; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .memo { color: var(--muted); font-size: .8rem; }
+  .memo { color: var(--muted); font-size: .85rem; }
   .row-btns { white-space: nowrap; text-align: right; }
   .row-btns button { padding: 3px 8px; font-size: .75rem; }
   .row-btns .del { color: var(--danger); }
@@ -72,14 +80,15 @@
     <form id="form">
       <div class="grid">
         <div><label for="date">通院日</label><input type="date" id="date" required></div>
-        <div><label for="clinic">施術所の名前</label><input type="text" id="clinic" list="clinicList" required placeholder="例：〇〇鍼灸院"></div>
-        <div><label for="fee">施術費（円）</label><input type="number" id="fee" min="0" step="1" inputmode="numeric" required></div>
-        <div><label for="transport">交通費（円・往復）</label><input type="number" id="transport" min="0" step="1" inputmode="numeric" placeholder="0"></div>
-        <div><label for="person">施術を受けた人</label><input type="text" id="person" list="personList" placeholder="例：本人"></div>
+        <div>
+          <label for="fee">施術費（円）</label>
+          <input type="text" id="fee" list="feeList" inputmode="numeric" autocomplete="off" required placeholder="金額を入力 または 下から選択">
+          <div class="chips" id="feeChips"></div>
+        </div>
+        <div><label for="transport">交通費（円・往復）</label><input type="text" id="transport" inputmode="numeric" autocomplete="off" placeholder="0"></div>
         <div><label for="memo">メモ（症状など）</label><input type="text" id="memo" placeholder="例：腰痛の治療"></div>
       </div>
-      <datalist id="clinicList"></datalist>
-      <datalist id="personList"></datalist>
+      <datalist id="feeList"></datalist>
       <div class="actions">
         <button type="submit" class="primary" id="submitBtn">追加する</button>
         <button type="button" id="cancelEdit" hidden>編集をやめる</button>
@@ -102,18 +111,9 @@
   </section>
 
   <section class="card">
-    <h2>明細書用まとめ（受けた人 × 施術所）</h2>
-    <div class="tablewrap"><table>
-      <thead><tr><th>受けた人</th><th>施術所</th><th class="num">回数</th><th class="num">支払額</th></tr></thead>
-      <tbody id="summaryBody"></tbody>
-    </table></div>
-    <p class="note">確定申告の「医療費控除の明細書」は、この単位でまとめて書けます（医療費の区分は「その他の医療費」）。交通費も含めた金額です。</p>
-  </section>
-
-  <section class="card">
     <h2>通院一覧</h2>
     <div class="tablewrap"><table>
-      <thead><tr><th>日付</th><th>施術所 / 受けた人</th><th class="num">施術費</th><th class="num">交通費</th><th></th></tr></thead>
+      <thead><tr><th>日付</th><th>メモ</th><th class="num">施術費</th><th class="num">交通費</th><th></th></tr></thead>
       <tbody id="listBody"></tbody>
     </table></div>
     <div class="actions">
@@ -142,35 +142,58 @@ function save() {
 const yen = n => n.toLocaleString('ja-JP') + '円';
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const today = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0,10); };
+// 全角数字・カンマ・「円」を許容して数値にする
+const toNum = s => {
+  const t = String(s ?? '').replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).replace(/[^0-9]/g, '');
+  return t ? parseInt(t, 10) : 0;
+};
+
+// 過去に入力した施術費を、よく使う順に返す
+function feeCandidates() {
+  const count = new Map();
+  records.forEach(r => { if (r.fee > 0) count.set(r.fee, (count.get(r.fee) || 0) + 1); });
+  return [...count.entries()].sort((a, b) => b[1] - a[1] || b[0] - a[0]).map(([v]) => v).slice(0, 8);
+}
+function renderFeeSuggestions() {
+  const c = feeCandidates();
+  $('feeList').innerHTML = c.map(v => `<option value="${v}">${yen(v)}</option>`).join('');
+  const cur = toNum($('fee').value);
+  $('feeChips').innerHTML = c.map(v => `<button type="button" class="chip ${v === cur ? 'on' : ''}" data-fee="${v}">${yen(v)}</button>`).join('');
+}
+$('feeChips').addEventListener('click', e => {
+  const b = e.target.closest('[data-fee]'); if (!b) return;
+  $('fee').value = b.dataset.fee;
+  renderFeeSuggestions();
+});
+$('fee').addEventListener('input', renderFeeSuggestions);
 
 function resetForm() {
   $('form').reset();
   $('date').value = today();
   const last = records[records.length - 1];
-  if (last) { $('clinic').value = last.clinic; $('person').value = last.person; $('transport').value = last.transport || ''; $('fee').value = last.fee; }
-  else { $('person').value = '本人'; }
+  if (last && last.transport) $('transport').value = last.transport;
   editingId = null;
   $('formTitle').textContent = '記録を追加';
   $('submitBtn').textContent = '追加する';
   $('cancelEdit').hidden = true;
+  renderFeeSuggestions();
 }
 
 $('form').addEventListener('submit', e => {
   e.preventDefault();
+  const fee = toNum($('fee').value);
+  if (!fee) { alert('施術費を入力してください'); $('fee').focus(); return; }
   const r = {
     id: editingId || Date.now().toString(36) + Math.random().toString(36).slice(2,6),
     date: $('date').value,
-    clinic: $('clinic').value.trim(),
-    fee: Math.max(0, parseInt($('fee').value, 10) || 0),
-    transport: Math.max(0, parseInt($('transport').value, 10) || 0),
-    person: $('person').value.trim() || '本人',
+    fee,
+    transport: toNum($('transport').value),
     memo: $('memo').value.trim(),
   };
   if (editingId) records = records.map(x => x.id === editingId ? r : x);
   else records.push(r);
   save();
-  const y = r.date.slice(0,4);
-  render(y);
+  render(r.date.slice(0,4));
   resetForm();
 });
 $('cancelEdit').addEventListener('click', resetForm);
@@ -178,18 +201,19 @@ $('cancelEdit').addEventListener('click', resetForm);
 function startEdit(id) {
   const r = records.find(x => x.id === id); if (!r) return;
   editingId = id;
-  $('date').value = r.date; $('clinic').value = r.clinic; $('fee').value = r.fee;
-  $('transport').value = r.transport || ''; $('person').value = r.person; $('memo').value = r.memo;
+  $('date').value = r.date; $('fee').value = r.fee;
+  $('transport').value = r.transport || ''; $('memo').value = r.memo || '';
   $('formTitle').textContent = '記録を編集';
   $('submitBtn').textContent = '更新する';
   $('cancelEdit').hidden = false;
+  renderFeeSuggestions();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 function remove(id) {
   const r = records.find(x => x.id === id); if (!r) return;
-  if (!confirm(`${r.date} ${r.clinic}（${yen(r.fee + r.transport)}）を削除しますか？`)) return;
+  if (!confirm(`${r.date}（${yen(r.fee + r.transport)}）の記録を削除しますか？`)) return;
   records = records.filter(x => x.id !== id);
-  save(); render($('year').value);
+  save(); render($('year').value); renderFeeSuggestions();
 }
 
 function years() {
@@ -214,33 +238,15 @@ function render(selectedYear) {
     ? `控除の目安 10万円を ${yen(total - 100000)} 超えています（家族の他の医療費とも合算できます）。`
     : `控除の目安 10万円まであと ${yen(100000 - total)}。病院・薬代など家族の他の医療費と合算できます（総所得200万円未満の方は所得の5%が目安）。`;
 
-  // summary
-  const groups = {};
-  rows.forEach(r => {
-    const k = r.person + '\u0000' + r.clinic;
-    groups[k] ??= { person: r.person, clinic: r.clinic, n: 0, sum: 0 };
-    groups[k].n++; groups[k].sum += r.fee + r.transport;
-  });
-  const g = Object.values(groups).sort((a,b) => a.person.localeCompare(b.person) || b.sum - a.sum);
-  $('summaryBody').innerHTML = g.length
-    ? g.map(x => `<tr><td>${esc(x.person)}</td><td>${esc(x.clinic)}</td><td class="num">${x.n}</td><td class="num">${yen(x.sum)}</td></tr>`).join('')
-    : `<tr><td colspan="4" class="empty">${y}年の記録はまだありません</td></tr>`;
-
-  // list
   $('listBody').innerHTML = rows.length
     ? rows.map(r => `<tr>
         <td style="white-space:nowrap">${r.date.slice(5).replace('-','/')}</td>
-        <td>${esc(r.clinic)}<div class="memo">${esc(r.person)}${r.memo ? '・' + esc(r.memo) : ''}</div></td>
+        <td class="memo">${esc(r.memo) || '—'}</td>
         <td class="num">${yen(r.fee)}</td>
         <td class="num">${r.transport ? yen(r.transport) : '—'}</td>
         <td class="row-btns"><button data-edit="${r.id}">編集</button> <button class="del" data-del="${r.id}">削除</button></td>
       </tr>`).join('')
     : `<tr><td colspan="5" class="empty">${y}年の記録はまだありません</td></tr>`;
-
-  // suggestions
-  const uniq = k => [...new Set(records.map(r => r[k]).filter(Boolean))];
-  $('clinicList').innerHTML = uniq('clinic').map(v => `<option value="${esc(v)}">`).join('');
-  $('personList').innerHTML = uniq('person').map(v => `<option value="${esc(v)}">`).join('');
 }
 
 $('year').addEventListener('change', e => render(e.target.value));
@@ -262,8 +268,8 @@ $('csvBtn').addEventListener('click', () => {
   const y = $('year').value;
   const rows = records.filter(r => r.date.startsWith(y)).sort((a,b) => a.date.localeCompare(b.date));
   if (!rows.length) { alert(`${y}年の記録がありません`); return; }
-  const head = ['支払日','医療を受けた方の氏名','病院・薬局などの名称','医療費の区分','施術費','交通費','支払った医療費の額','メモ'];
-  const lines = rows.map(r => [r.date, r.person, r.clinic, 'その他の医療費', r.fee, r.transport, r.fee + r.transport, r.memo].map(csvCell).join(','));
+  const head = ['支払日','施術費','交通費','合計','メモ'];
+  const lines = rows.map(r => [r.date, r.fee, r.transport, r.fee + r.transport, r.memo || ''].map(csvCell).join(','));
   download(`鍼灸_医療費_${y}.csv`, '﻿' + [head.join(','), ...lines].join('\r\n'), 'text/csv');
 });
 $('backupBtn').addEventListener('click', () => {
@@ -278,7 +284,7 @@ $('restoreFile').addEventListener('change', async e => {
     const ids = new Set(records.map(r => r.id));
     const add = data.filter(r => r && r.id && r.date && !ids.has(r.id));
     if (!confirm(`${add.length}件の記録を追加します（重複は除きます）。よろしいですか？`)) return;
-    records = records.concat(add); save(); render();
+    records = records.concat(add); save(); render(); renderFeeSuggestions();
   } catch { alert('バックアップファイルを読み込めませんでした'); }
   e.target.value = '';
 });
