@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>鍼灸 通院記録</title>
+<style>
+  :root {
+    --bg: #f6f4ef; --card: #ffffff; --text: #2b2a27; --muted: #77736b;
+    --line: #e4e0d7; --accent: #3f7d6b; --accent-soft: #e3f0eb; --danger: #b8483c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1d1c; --card: #262826; --text: #ecebe6; --muted: #a09d95;
+      --line: #3a3c39; --accent: #6fb8a2; --accent-soft: #2c3d37; --danger: #e07a6e;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
+    line-height: 1.6;
+  }
+  main { max-width: 760px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 1.4rem; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: .85rem; margin: 0 0 20px; }
+  h2 { font-size: 1rem; margin: 0 0 12px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  form .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 520px) { form .grid { grid-template-columns: 1fr; } }
+  label { display: block; font-size: .8rem; color: var(--muted); margin-bottom: 4px; }
+  input, select {
+    width: 100%; padding: 9px 10px; font-size: 1rem; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--text);
+  }
+  .full { grid-column: 1 / -1; }
+  button {
+    font: inherit; font-size: .9rem; padding: 9px 16px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--card); color: var(--text);
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+  .yearbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+  .yearbar select { width: auto; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  @media (max-width: 520px) { .stats { grid-template-columns: 1fr; } }
+  .stat { background: var(--accent-soft); border-radius: 10px; padding: 10px 12px; }
+  .stat .k { font-size: .75rem; color: var(--muted); }
+  .stat .v { font-size: 1.3rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .meter { height: 8px; background: var(--line); border-radius: 4px; margin-top: 12px; overflow: hidden; }
+  .meter > div { height: 100%; background: var(--accent); }
+  .note { font-size: .8rem; color: var(--muted); margin-top: 6px; }
+  table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+  th, td { padding: 8px 6px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+  th { font-size: .75rem; color: var(--muted); font-weight: 600; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .memo { color: var(--muted); font-size: .8rem; }
+  .row-btns { white-space: nowrap; text-align: right; }
+  .row-btns button { padding: 3px 8px; font-size: .75rem; }
+  .row-btns .del { color: var(--danger); }
+  .empty { color: var(--muted); text-align: center; padding: 20px 0; }
+  .tablewrap { overflow-x: auto; }
+</style>
+</head>
+<body>
+<main>
+  <h1>鍼灸 通院記録</h1>
+  <p class="sub">医療費控除の申告用に、通院日と支払額を記録します。データはこのブラウザ内に保存されます。</p>
+
+  <section class="card">
+    <h2 id="formTitle">記録を追加</h2>
+    <form id="form">
+      <div class="grid">
+        <div><label for="date">通院日</label><input type="date" id="date" required></div>
+        <div><label for="clinic">施術所の名前</label><input type="text" id="clinic" list="clinicList" required placeholder="例：〇〇鍼灸院"></div>
+        <div><label for="fee">施術費（円）</label><input type="number" id="fee" min="0" step="1" inputmode="numeric" required></div>
+        <div><label for="transport">交通費（円・往復）</label><input type="number" id="transport" min="0" step="1" inputmode="numeric" placeholder="0"></div>
+        <div><label for="person">施術を受けた人</label><input type="text" id="person" list="personList" placeholder="例：本人"></div>
+        <div><label for="memo">メモ（症状など）</label><input type="text" id="memo" placeholder="例：腰痛の治療"></div>
+      </div>
+      <datalist id="clinicList"></datalist>
+      <datalist id="personList"></datalist>
+      <div class="actions">
+        <button type="submit" class="primary" id="submitBtn">追加する</button>
+        <button type="button" id="cancelEdit" hidden>編集をやめる</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="card">
+    <div class="yearbar">
+      <h2 style="margin:0">集計</h2>
+      <select id="year" aria-label="年を選ぶ"></select>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="k">施術費</div><div class="v" id="sFee">0円</div></div>
+      <div class="stat"><div class="k">交通費</div><div class="v" id="sTr">0円</div></div>
+      <div class="stat"><div class="k">合計（<span id="sCount">0</span>回）</div><div class="v" id="sTotal">0円</div></div>
+    </div>
+    <div class="meter"><div id="meterBar" style="width:0%"></div></div>
+    <p class="note" id="meterNote"></p>
+  </section>
+
+  <section class="card">
+    <h2>明細書用まとめ（受けた人 × 施術所）</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>受けた人</th><th>施術所</th><th class="num">回数</th><th class="num">支払額</th></tr></thead>
+      <tbody id="summaryBody"></tbody>
+    </table></div>
+    <p class="note">確定申告の「医療費控除の明細書」は、この単位でまとめて書けます（医療費の区分は「その他の医療費」）。交通費も含めた金額です。</p>
+  </section>
+
+  <section class="card">
+    <h2>通院一覧</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>日付</th><th>施術所 / 受けた人</th><th class="num">施術費</th><th class="num">交通費</th><th></th></tr></thead>
+      <tbody id="listBody"></tbody>
+    </table></div>
+    <div class="actions">
+      <button type="button" id="csvBtn">この年をCSVで保存</button>
+      <button type="button" id="backupBtn">全データをバックアップ</button>
+      <button type="button" id="restoreBtn">バックアップから復元</button>
+      <input type="file" id="restoreFile" accept="application/json" hidden>
+    </div>
+    <p class="note">データはこのブラウザだけに保存されます。ブラウザの履歴削除などで消えることがあるので、ときどき「バックアップ」してください。</p>
+  </section>
+</main>
+
+<script>
+const KEY = 'shinkyu-records-v1';
+const $ = id => document.getElementById(id);
+let records = load();
+let editingId = null;
+
+function load() {
+  try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch { return []; }
+}
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(records)); }
+  catch { alert('保存できませんでした。ブラウザの設定を確認してください。'); }
+}
+const yen = n => n.toLocaleString('ja-JP') + '円';
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const today = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0,10); };
+
+function resetForm() {
+  $('form').reset();
+  $('date').value = today();
+  const last = records[records.length - 1];
+  if (last) { $('clinic').value = last.clinic; $('person').value = last.person; $('transport').value = last.transport || ''; $('fee').value = last.fee; }
+  else { $('person').value = '本人'; }
+  editingId = null;
+  $('formTitle').textContent = '記録を追加';
+  $('submitBtn').textContent = '追加する';
+  $('cancelEdit').hidden = true;
+}
+
+$('form').addEventListener('submit', e => {
+  e.preventDefault();
+  const r = {
+    id: editingId || Date.now().toString(36) + Math.random().toString(36).slice(2,6),
+    date: $('date').value,
+    clinic: $('clinic').value.trim(),
+    fee: Math.max(0, parseInt($('fee').value, 10) || 0),
+    transport: Math.max(0, parseInt($('transport').value, 10) || 0),
+    person: $('person').value.trim() || '本人',
+    memo: $('memo').value.trim(),
+  };
+  if (editingId) records = records.map(x => x.id === editingId ? r : x);
+  else records.push(r);
+  save();
+  const y = r.date.slice(0,4);
+  render(y);
+  resetForm();
+});
+$('cancelEdit').addEventListener('click', resetForm);
+
+function startEdit(id) {
+  const r = records.find(x => x.id === id); if (!r) return;
+  editingId = id;
+  $('date').value = r.date; $('clinic').value = r.clinic; $('fee').value = r.fee;
+  $('transport').value = r.transport || ''; $('person').value = r.person; $('memo').value = r.memo;
+  $('formTitle').textContent = '記録を編集';
+  $('submitBtn').textContent = '更新する';
+  $('cancelEdit').hidden = false;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+function remove(id) {
+  const r = records.find(x => x.id === id); if (!r) return;
+  if (!confirm(`${r.date} ${r.clinic}（${yen(r.fee + r.transport)}）を削除しますか？`)) return;
+  records = records.filter(x => x.id !== id);
+  save(); render($('year').value);
+}
+
+function years() {
+  const set = new Set(records.map(r => r.date.slice(0,4)));
+  set.add(String(new Date().getFullYear()));
+  return [...set].sort().reverse();
+}
+
+function render(selectedYear) {
+  const ys = years();
+  const y = selectedYear && ys.includes(selectedYear) ? selectedYear : ($('year').value || ys[0]);
+  $('year').innerHTML = ys.map(v => `<option value="${v}" ${v===y?'selected':''}>${v}年（1月〜12月）</option>`).join('');
+
+  const rows = records.filter(r => r.date.startsWith(y)).sort((a,b) => b.date.localeCompare(a.date));
+  const fee = rows.reduce((s,r) => s + r.fee, 0);
+  const tr = rows.reduce((s,r) => s + r.transport, 0);
+  const total = fee + tr;
+  $('sFee').textContent = yen(fee); $('sTr').textContent = yen(tr);
+  $('sTotal').textContent = yen(total); $('sCount').textContent = rows.length;
+  $('meterBar').style.width = Math.min(100, total / 100000 * 100) + '%';
+  $('meterNote').textContent = total >= 100000
+    ? `控除の目安 10万円を ${yen(total - 100000)} 超えています（家族の他の医療費とも合算できます）。`
+    : `控除の目安 10万円まであと ${yen(100000 - total)}。病院・薬代など家族の他の医療費と合算できます（総所得200万円未満の方は所得の5%が目安）。`;
+
+  // summary
+  const groups = {};
+  rows.forEach(r => {
+    const k = r.person + '\u0000' + r.clinic;
+    groups[k] ??= { person: r.person, clinic: r.clinic, n: 0, sum: 0 };
+    groups[k].n++; groups[k].sum += r.fee + r.transport;
+  });
+  const g = Object.values(groups).sort((a,b) => a.person.localeCompare(b.person) || b.sum - a.sum);
+  $('summaryBody').innerHTML = g.length
+    ? g.map(x => `<tr><td>${esc(x.person)}</td><td>${esc(x.clinic)}</td><td class="num">${x.n}</td><td class="num">${yen(x.sum)}</td></tr>`).join('')
+    : `<tr><td colspan="4" class="empty">${y}年の記録はまだありません</td></tr>`;
+
+  // list
+  $('listBody').innerHTML = rows.length
+    ? rows.map(r => `<tr>
+        <td style="white-space:nowrap">${r.date.slice(5).replace('-','/')}</td>
+        <td>${esc(r.clinic)}<div class="memo">${esc(r.person)}${r.memo ? '・' + esc(r.memo) : ''}</div></td>
+        <td class="num">${yen(r.fee)}</td>
+        <td class="num">${r.transport ? yen(r.transport) : '—'}</td>
+        <td class="row-btns"><button data-edit="${r.id}">編集</button> <button class="del" data-del="${r.id}">削除</button></td>
+      </tr>`).join('')
+    : `<tr><td colspan="5" class="empty">${y}年の記録はまだありません</td></tr>`;
+
+  // suggestions
+  const uniq = k => [...new Set(records.map(r => r[k]).filter(Boolean))];
+  $('clinicList').innerHTML = uniq('clinic').map(v => `<option value="${esc(v)}">`).join('');
+  $('personList').innerHTML = uniq('person').map(v => `<option value="${esc(v)}">`).join('');
+}
+
+$('year').addEventListener('change', e => render(e.target.value));
+$('listBody').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.edit) startEdit(b.dataset.edit);
+  if (b.dataset.del) remove(b.dataset.del);
+});
+
+function download(name, text, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+const csvCell = v => /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g,'""')}"` : String(v);
+
+$('csvBtn').addEventListener('click', () => {
+  const y = $('year').value;
+  const rows = records.filter(r => r.date.startsWith(y)).sort((a,b) => a.date.localeCompare(b.date));
+  if (!rows.length) { alert(`${y}年の記録がありません`); return; }
+  const head = ['支払日','医療を受けた方の氏名','病院・薬局などの名称','医療費の区分','施術費','交通費','支払った医療費の額','メモ'];
+  const lines = rows.map(r => [r.date, r.person, r.clinic, 'その他の医療費', r.fee, r.transport, r.fee + r.transport, r.memo].map(csvCell).join(','));
+  download(`鍼灸_医療費_${y}.csv`, '﻿' + [head.join(','), ...lines].join('\r\n'), 'text/csv');
+});
+$('backupBtn').addEventListener('click', () => {
+  download(`鍼灸記録_バックアップ_${today()}.json`, JSON.stringify(records, null, 2), 'application/json');
+});
+$('restoreBtn').addEventListener('click', () => $('restoreFile').click());
+$('restoreFile').addEventListener('change', async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    const data = JSON.parse(await f.text());
+    if (!Array.isArray(data)) throw 0;
+    const ids = new Set(records.map(r => r.id));
+    const add = data.filter(r => r && r.id && r.date && !ids.has(r.id));
+    if (!confirm(`${add.length}件の記録を追加します（重複は除きます）。よろしいですか？`)) return;
+    records = records.concat(add); save(); render();
+  } catch { alert('バックアップファイルを読み込めませんでした'); }
+  e.target.value = '';
+});
+
+resetForm();
+render();
+</script>
+</body>
+</html>
